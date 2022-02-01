@@ -23,7 +23,7 @@ are given below. See the full rankings in ``opening_guesses.csv``.
 
 This code isn't set up to be used on live games. The purpose (and fun) of writing it was to think about the approach, implementing it and seeing the final performance. Using this optimal solver for real play would take the fun away, and there are better ways to cheat if you just want a good score.
 
-That being said, the code is reasonably well documented and organized. If you know Python, you can probably set it up for a live game or two.
+That being said, the code is reasonably well documented and organized. If you know Python, you can probably set it up for a live game or two. Regular CPython is slow, so I recommend using [PyPy](https://www.pypy.org/) for the performance boost.
 
 # Approach
 
@@ -145,18 +145,6 @@ The official Wordle list contains 12,972 words and determines which guesses are 
 
 # Potential Improvements
 
-## Duplicated letter information.
-
-The :class:`WordleInformation` objects don't propperly apply yellow and gray tiles when the tiles have duplicated letters. I don't know how Wordle handles it, so I'll have to wait for those days. See the example below.
-
-```
-Your guess: papal
-Solution:   apple
-Output:     ++=-+
-```
-
-The current objects will only check for the "p" in the middle, but not additionally require a second "p". I chose to discard this information because the logic of dealing wtih this kind of event between guesses is unclear.
-
 ## Performance Issues
 
 Determining the optimal first guess is very slow. Luckily, it only needs to be
@@ -206,3 +194,22 @@ performance is too big of a concern.
   have to be one or the other.
 * Write in a fast language: This is likely the best option, but it's been a
   while since I've used C++. Maybe it's a chance to learn Go.
+
+## Duplicated letter information.
+
+The :class:`WordleInformation` objects don't propperly apply yellow and gray tiles when the tiles have duplicated letters. I don't know how Wordle handles it, so I'll have to wait for those days. See the example below.
+
+```
+Your guess: papal
+Solution:   apple
+Output:     ++=-+
+```
+
+The current objects will only check for the "p" in the middle, but not additionally require a second "p". I chose to discard this information because the logic of dealing wtih this kind of event between guesses is unclear.
+
+## Weighted Guesses
+
+Right now, I assume all words are equally likely solutions to the Wordle, but it might be beneficial to weight common words more highly. This would allow for a larger potential word set while still emphasizing that known words are more likely.
+
+12Dicts has a frequency based list: ``2+2+3freq.txt`` that could be used here. However, I'm not sure what the weightings should be. Dealing with non-uniform weights would also require codebase updates.
+
