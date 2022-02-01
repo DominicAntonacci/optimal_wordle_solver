@@ -255,7 +255,7 @@ def get_guess_value(guess, possible_words, wi=None):
 
     for word in possible_words:
         new_wi, out = wi.make_guess(guess, word)
-        # The word was guesses, so there's no remaining words.
+        # The word was guessed, so there's no remaining words.
         if out == "=====":
             remaining_word_counts.append(0)
         else:
@@ -267,7 +267,9 @@ def get_guess_value(guess, possible_words, wi=None):
 
 
 #%%
-pool = Pool(3)
+
+# Hacky thing with pool so it doesn't get recreated every time this is called.
+pool = Pool(4)
 def rank_guesses(possible_guesses, possible_words, wi=None, threads=4):
     """
     Ranks guesses based on their value.

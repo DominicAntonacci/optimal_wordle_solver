@@ -1,4 +1,4 @@
-# Wordle Solver
+# Optimal Wordle Solver
 
 An optimal Wordle strategy based on information theory.
 
@@ -86,14 +86,11 @@ scale accordingly. This means the way to minimize entropy is to remove the most
 possible words with a single guess. This also means we are picking the guess
 that will provide the most information about the unknown word.
 
-# Algorithm Results
-
-I tested this algorithm against 225 past Wordle answers from
-[here](https://www.reviewgeek.com/todays-wordle-answer/).
-
-## Algorithm Performance
+# Algorithm Performance
 
 The algorithm was provided the 5,486 five-letter words from 12Dicts's ``2of12inf.txt`` and ``3of6all.txt`` lists and always used the starting guess "tares". It was run in both normal mode, where all 5,486 possible guesses are considered for every round, and in hard mode, where only possible solutions are considered in each round.
+
+The algorithm was tested against Wordle answers #1-#225, avaiable [here](https://www.reviewgeek.com/todays-wordle-answer/). 
 
 ## Normal Mode
 
@@ -181,9 +178,9 @@ are listed below
   [``multiprocessing``](https://docs.python.org/3/library/multiprocessing.html).
   Parallelizing things never hurts.
 
-  I considered a few other optimization ideas, but they were either too
-  complicated or not faster. I may revisit these ideas in the future if
-  performance is too big of a concern.
+I considered a few other optimization ideas, but they were either too
+complicated or not faster. I may revisit these ideas in the future if
+performance is too big of a concern.
 
 * Regular expressions: I found a custom ``is_valid_word`` was faster than
   implementing regex searches. I think it's because my custom expression can

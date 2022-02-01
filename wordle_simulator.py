@@ -1,5 +1,7 @@
 """
-This scripts tests the performance for various configurations.
+This scripts tests the algorithm performance in normal and hard mode.
+
+It's currently configured to run off the 12Dict list.
 """
 #%%
 import pickle
@@ -12,14 +14,15 @@ with open("wordle_answers.txt") as f:
         all_answers.append(row[-6:-1])
 
 #%%
- 
+
 # The first guess results can be cached for improved performance. The key is
 # (guess, output, len(possible_words)) and the value is the ranked results. The
 # guess and len(possible_words) help ensure the cache isn't used for invalid
 # guesses or word lists.
 first_guess_cache = {}
-with open('first_guess_cache.pickle', 'rb') as f:
+with open("first_guess_cache.pickle", "rb") as f:
     first_guess_cache = pickle.load(f)
+
 
 def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=False):
     """
@@ -55,7 +58,9 @@ def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=Fa
         # Filter the list and figure out the next guess
         possible_solutions = [x for x in possible_solutions if wi.is_valid_word(x)]
         if verbose:
-            print(f"  Guess {guess_count}: {guess}. {out} {len(possible_solutions)} words remaining.")
+            print(
+                f"  Guess {guess_count}: {guess}. {out} {len(possible_solutions)} words remaining."
+            )
             if len(possible_solutions) < 10:
                 print(f"  Possible solutions: {possible_solutions}")
 
@@ -67,9 +72,9 @@ def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=Fa
             ranked_guesses = rank_guesses(possible_words, possible_solutions, wi)
             if guess_count == 1:
                 first_guess_cache[key] = ranked_guesses
-                with open('first_guess_cache.pickle', 'wb') as f:
+                with open("first_guess_cache.pickle", "wb") as f:
                     pickle.dump(first_guess_cache, f)
-   
+
         if len(ranked_guesses) == 0:
             print("  Error! No more possible solutions.")
             return 7
@@ -90,49 +95,53 @@ def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=Fa
 
         # Stop after 6 turns.
         if guess_count == 6:
-            print('  Lost')
+            print("  Lost")
             return 7
 
+
 #%%
+initial_guess = "tares"
+normal_results = []
+hard_results = []
+for idx, answer in enumerate(all_answers, 1):
+    print(f"{idx} / {len(all_answers)}")
+    res = play_game(answer, "tares", possible_words, verbose=True)
+    # print(f'{idx} {answer}: Took {res} guesses')
+    normal_results.append((answer, res))
+
+    res = play_game(answer, "tares", possible_words, verbose=True, hard_mode=True)
+    hard_results.append((answer, res))
+
+
+# Easily pass from pypy back to  Python
+with open("simulation.pickle", "wb") as f:
+    pickle.dump({"normal": normal_results, "hard": hard_results}, f)
+#%%
+with open("simulation.pickle", "rb") as f:
+    res = pickle.load(f)
+    normal_results = res["normal"]
+    hard_results = res["hard"]
+
+
 def print_game_stats(all_results):
     """
-    Prints the game statistics
+    Prints the game statistics.
+
+    :param all_results: A list of (word, score) tuples.
     """
     turns = [x[1] for x in all_results]
     count = Counter(turns)
     for idx in range(2, 9):
-        print(f"{idx}: {count[idx]} /  {len(turns)} = {count[idx] / len(turns)*100:.1f}%")
-    print('Failed words:')
+        print(
+            f"{idx}: {count[idx]} /  {len(turns)} = {count[idx] / len(turns)*100:.1f}%"
+        )
+    print("Failed words:")
     for word, t in all_results:
         if t == 7:
             print(word)
         if t == 8:
-            print(f'{word} (missing from dict)')
+            print(f"{word} (missing from dict)")
 
-
-
-initial_guess = "tares"
-all_results = []
-#%%
-normal_results = []
-hard_results = []
-for idx, answer in enumerate(all_answers, 1):
-    print(f'{idx} / {len(all_answers)}')
-    res = play_game(answer, "tares", possible_words, verbose=True)
-    # print(f'{idx} {answer}: Took {res} guesses')
-    normal_results.append((answer, res))
-    
-    res = play_game(answer, "tares", possible_words, verbose=True, hard_mode=True)
-    hard_results.append((answer, res))
-
-# Easily pass from pypy back to  Python
-with open("simulation.pickle", "wb") as f:
-    pickle.dump({'normal': normal_results, 'hard': hard_results}, f)
-#%%
-with open("simulation.pickle", 'rb') as f:
-    res = pickle.load(f)
-    normal_results = res['normal']
-    hard_results = res['hard']
 
 print_game_stats(normal_results)
 print_game_stats(hard_results)
