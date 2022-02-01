@@ -8,7 +8,7 @@ simulation/information theory perspective. Provided the starting list of words
 is correct, this play should be theoretically optimal (if cheating is excluded).
 
 It's currently achieved a 99.1% win percentage on historical Wordles (until
-2022/01/30), only failing two not in the starting list. In Hard Mode, it has achieved a 96.4% win percentage, only losing to 8 words (including the two not on the list).
+2022/01/30). The only words it lost on were not assumed to be valid words that could be guessed. In Hard Mode, it has achieved a 96.4% win percentage, only losing to 8 words (including the two from normal mode).
 
 The best starting words using the five-letter words from the 12Dicts word list
 are given below. See the full rankings in ``opening_guesses.csv``.
@@ -18,6 +18,12 @@ are given below. See the full rankings in ``opening_guesses.csv``.
 3. rates
 4. aloes
 5. tales
+
+## Can You Use It?
+
+This code isn't set up to be used on live games. The purpose (and fun) of writing it was to think about the approach, implementing it and seeing the final performance. Using this optimal solver for real play would take the fun away, and there are better ways to cheat if you just want a good score.
+
+That being said, the code is reasonably well documented and organized. If you know Python, you can probably set it up for a live game or two.
 
 # Approach
 
