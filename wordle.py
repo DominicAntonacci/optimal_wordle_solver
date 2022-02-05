@@ -12,32 +12,13 @@ from functools import partial, lru_cache
 from multiprocessing import Pool
 from pathlib import Path
 
+from word_lists import (
+    twelve_dict_words,
+    twelve_dict_weights,
+    wordle_guesses,
+    wordle_weights,
+)
 
-possible_words = set()
-dictionaries = [
-    "./12dicts-6.0.2/American/2of12inf.txt",
-    "./12dicts-6.0.2/International/3of6all.txt",
-    "./12dicts-6.0.2/Special/neol2016.txt",
-]
-for dictionary in dictionaries:
-    with open(dictionary) as f:
-        for line in f:
-            word = line[:-1].lower()
-            # Remove special characters from 12Dicts list
-            for char in ":&#=<^~+!%":
-                word = word.replace(char, "")
-            if re.match("^[a-z]{5}$", word):
-                possible_words.add(word)
-
-
-wordle_words = set()
-dictionaries = ["wordle-list/words"]
-for dictionary in dictionaries:
-    with open(dictionary) as f:
-        for line in f:
-            word = line[:-1].lower()
-            if re.match("^[a-z]{5}$", word):
-                wordle_words.add(word)
 
 #%%
 class WordleInformation:
@@ -271,7 +252,7 @@ def _get_remaining_words(wi, possible_words):
     return sum(wi.is_valid_word(w) for w in possible_words)
 
 
-def get_guess_value(guess, possible_words, wi=None):
+def get_guess_value(guess, possible_words, weights=None, wi=None):
     """
     Returns the average number of remaining words for a given guess.
 
@@ -279,10 +260,15 @@ def get_guess_value(guess, possible_words, wi=None):
 
     :param guess: The guess
     :param possible_words: The possible true words remaining.
+    :param weights: The weight of each possible word. If None, all possible
+        words are evenly weighted.
     :param wi: A WordleInformation object
     """
     if wi is None:
         wi = WordleInformation()
+
+    if weights is None:
+        weights = [1] * len(possible_words)
     remaining_word_counts = []
     possible_words = tuple(possible_words)  # Make immutable for caching.
     for word in possible_words:
@@ -293,7 +279,13 @@ def get_guess_value(guess, possible_words, wi=None):
         else:
             remaining_word_counts.append(_get_remaining_words(new_wi, possible_words))
 
-    return sum(remaining_word_counts) / len(remaining_word_counts)
+    # Compute the weighted average.
+    weighted_average = 0
+    for count, weight in zip(remaining_word_counts, weights):
+        weighted_average += count * weight
+    weighted_average /= sum(weights)
+    return weighted_average
+
 
 
 #%%
@@ -303,15 +295,16 @@ pool = Pool(4)
 
 
 @lru_cache(maxsize=2048)
-def rank_guesses(possible_guesses, possible_words, wi=None, threads=4):
+def rank_guesses(possible_guesses, possible_answers, weights=None, wi=None, threads=4):
     """
     Ranks guesses based on their value.
 
     :param possible_guesses: The possible guesses.
-    :param possible_words: The possible true words
+    :param possible_answers: The possible answers
+    :param weights: The weight of each possible answer.
     :param wi: A WordleInformation object.
     :param threads: The number of CPU threads to use. If set to 1, this runs
-        single-threaded. There's some smart logic to not multithread if it seems less efficient.
+        single-threaded for debugging purposes.
     """
     # Hack to restart the pool only if we need fewer threads.
     global pool
@@ -323,17 +316,19 @@ def rank_guesses(possible_guesses, possible_words, wi=None, threads=4):
     if threads == 1:
         values = []
         for guess in possible_guesses:
-            values.append(get_guess_value(guess, possible_words, wi))
+            values.append(get_guess_value(guess, possible_answers, weights, wi))
 
     else:
-        func = partial(get_guess_value, possible_words=possible_words, wi=wi)
+        func = partial(
+            get_guess_value, possible_words=possible_answers, weights=weights, wi=wi
+        )
         values = pool.map(func, possible_guesses, chunksize=len(possible_guesses) // 12)
 
     guess_value = list(zip(values, possible_guesses))
     return sorted(guess_value)
 
 
-def process_first_guess(word_list, file_name, block_size=64):
+def process_first_guess(file_name, word_list, weights=None, block_size=64, num_threads=4):
     """
     Processes the first guess.
 
@@ -342,14 +337,16 @@ def process_first_guess(word_list, file_name, block_size=64):
     restarted easily.
 
     :param word_list: The list of words to use.
+    :param weights: The weights to use for each word.
     :param file_name: The ending file name.
     :param block_size: The number of guesses to process at a time.
+    :param num_threads: The number of threads to use.
     """
     word_list = tuple(word_list)
     # Create the pickle file if it doesn't exist.
-    pickle_path = Path(file_name).with_suffix('.pickle')
+    pickle_path = Path(file_name).with_suffix(".pickle")
     if not pickle_path.exists():
-        with pickle_path.open("wb")as f:
+        with pickle_path.open("wb") as f:
             pickle.dump([], f)
 
     while True:
@@ -366,7 +363,7 @@ def process_first_guess(word_list, file_name, block_size=64):
 
         # Process the next guesses.
         t = time.time()
-        guess_values = rank_guesses(next_guesses, word_list, threads=4)
+        guess_values = rank_guesses(next_guesses, word_list, weights, threads=num_threads)
         for guess in guess_values:
             print(guess)
         print(f"This block took {time.time() - t} seconds")
@@ -380,12 +377,20 @@ def process_first_guess(word_list, file_name, block_size=64):
     with pickle_path.open("rb") as f:
         all_guesses = pickle.load(f)
 
-    csv_path = Path(file_name).with_suffix('.csv')
+    csv_path = Path(file_name).with_suffix(".csv")
     with csv_path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["Score", "Word"])
         writer.writerows(sorted(all_guesses))
 
+
 if __name__ == "__main__":
-    process_first_guess(possible_words, "12Dict_guesses", 64)
-    process_first_guess(wordle_words, "wordle_opening_guesses", 32)
+    process_first_guess(
+    "wordle_opening_guesses", wordle_guesses, wordle_weights, block_size=32, num_threads=4
+)
+    process_first_guess(
+        "12Dict_guesses", twelve_dict_words, twelve_dict_weights, block_size=64
+    )
+    process_first_guess(
+        "wordle_opening_guesses", wordle_guesses, wordle_weights, block_size=32
+    )
