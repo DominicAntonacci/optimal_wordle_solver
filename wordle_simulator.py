@@ -6,7 +6,9 @@ It's currently configured to run off the 12Dict list.
 #%%
 import pickle
 from collections import Counter
-from wordle import WordleInformation, rank_guesses, possible_words
+from wordle import WordleInformation, rank_guesses, possible_words, wordle_words
+
+possible_words = tuple(wordle_words)
 
 all_answers = []
 with open("wordle_answers.txt") as f:
@@ -14,15 +16,6 @@ with open("wordle_answers.txt") as f:
         all_answers.append(row[-6:-1])
 
 #%%
-
-# The first guess results can be cached for improved performance. The key is
-# (guess, output, len(possible_words)) and the value is the ranked results. The
-# guess and len(possible_words) help ensure the cache isn't used for invalid
-# guesses or word lists.
-first_guess_cache = {}
-with open("first_guess_cache.pickle", "rb") as f:
-    first_guess_cache = pickle.load(f)
-
 
 def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=False):
     """
@@ -44,8 +37,8 @@ def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=Fa
         print(f"Game impossible for {answer} with word list.")
         return 8
     wi = WordleInformation()
-    possible_solutions = possible_words.copy()
-    possible_words = possible_words.copy()  # Lose the reference.
+    possible_solutions = tuple(possible_words)
+    possible_words = tuple(possible_words) # Lose the reference.
     guess = initial_guess
     won_game = False
     guess_count = 0
@@ -56,7 +49,7 @@ def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=Fa
         guess_count += 1
 
         # Filter the list and figure out the next guess
-        possible_solutions = [x for x in possible_solutions if wi.is_valid_word(x)]
+        possible_solutions = tuple((x for x in possible_solutions if wi.is_valid_word(x)))
         if verbose:
             print(
                 f"  Guess {guess_count}: {guess}. {out} {len(possible_solutions)} words remaining."
@@ -66,14 +59,8 @@ def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=Fa
 
         key = (guess, out, len(possible_words))
 
-        if guess_count == 1 and key in first_guess_cache:
-            ranked_guesses = first_guess_cache[key]
-        else:
-            ranked_guesses = rank_guesses(possible_words, possible_solutions, wi)
-            if guess_count == 1:
-                first_guess_cache[key] = ranked_guesses
-                with open("first_guess_cache.pickle", "wb") as f:
-                    pickle.dump(first_guess_cache, f)
+        ranked_guesses = rank_guesses(possible_words, possible_solutions, wi)
+
 
         if len(ranked_guesses) == 0:
             print("  Error! No more possible solutions.")
@@ -100,24 +87,24 @@ def play_game(answer, initial_guess, possible_words, verbose=False, hard_mode=Fa
 
 
 #%%
-initial_guess = "tares"
+initial_guess = "lares"
 normal_results = []
 hard_results = []
 for idx, answer in enumerate(all_answers, 1):
     print(f"{idx} / {len(all_answers)}")
-    res = play_game(answer, "tares", possible_words, verbose=True)
+    res = play_game(answer, initial_guess, possible_words, verbose=True)
     # print(f'{idx} {answer}: Took {res} guesses')
     normal_results.append((answer, res))
 
-    res = play_game(answer, "tares", possible_words, verbose=True, hard_mode=True)
+    res = play_game(answer, initial_guess, possible_words, verbose=True, hard_mode=True)
     hard_results.append((answer, res))
 
 
 # Easily pass from pypy back to  Python
-with open("simulation.pickle", "wb") as f:
+with open("simulation_wordle.pickle", "wb") as f:
     pickle.dump({"normal": normal_results, "hard": hard_results}, f)
 #%%
-with open("simulation.pickle", "rb") as f:
+with open("simulation_wordle.pickle", "rb") as f:
     res = pickle.load(f)
     normal_results = res["normal"]
     hard_results = res["hard"]

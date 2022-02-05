@@ -8,8 +8,9 @@ import pickle
 import re
 import time
 from collections import Counter
-from functools import partial
+from functools import partial, lru_cache
 from multiprocessing import Pool
+from pathlib import Path
 
 
 possible_words = set()
@@ -75,6 +76,22 @@ class WordleInformation:
             self.required_letters = {}
         else:
             self.required_letters = required_letters
+
+    def _members(self):
+        """
+        Helper function for __hash__ and __eq__.
+
+        https://stackoverflow.com/a/45170549
+        """
+        pl = tuple((frozenset(x) for x in self.possible_letters))
+        rl = tuple(sorted(self.required_letters))
+        return (pl, rl)
+
+    def __hash__(self):
+        return hash(self._members())
+
+    def __eq__(self, other):
+        return self._members() == other._members()
 
     def is_valid_word(self, word):
         """
@@ -239,6 +256,21 @@ def test_add_matches():
 test_add_matches()
 
 
+@lru_cache(maxsize=1024)
+def _get_remaining_words(wi, possible_words):
+    """
+    Returns the number of remaining words.
+
+    This is separated so that it is cachable.
+
+    :param wi: The WordleInformation object.
+    :param possible_words: The words to filter.
+
+    :returns: The number of words that match the object.
+    """
+    return sum(wi.is_valid_word(w) for w in possible_words)
+
+
 def get_guess_value(guess, possible_words, wi=None):
     """
     Returns the average number of remaining words for a given guess.
@@ -252,16 +284,14 @@ def get_guess_value(guess, possible_words, wi=None):
     if wi is None:
         wi = WordleInformation()
     remaining_word_counts = []
-
+    possible_words = tuple(possible_words)  # Make immutable for caching.
     for word in possible_words:
         new_wi, out = wi.make_guess(guess, word)
         # The word was guessed, so there's no remaining words.
         if out == "=====":
             remaining_word_counts.append(0)
         else:
-            remaining_word_counts.append(
-                sum(new_wi.is_valid_word(w) for w in possible_words)
-            )
+            remaining_word_counts.append(_get_remaining_words(new_wi, possible_words))
 
     return sum(remaining_word_counts) / len(remaining_word_counts)
 
@@ -270,6 +300,9 @@ def get_guess_value(guess, possible_words, wi=None):
 
 # Hacky thing with pool so it doesn't get recreated every time this is called.
 pool = Pool(4)
+
+
+@lru_cache(maxsize=2048)
 def rank_guesses(possible_guesses, possible_words, wi=None, threads=4):
     """
     Ranks guesses based on their value.
@@ -280,10 +313,13 @@ def rank_guesses(possible_guesses, possible_words, wi=None, threads=4):
     :param threads: The number of CPU threads to use. If set to 1, this runs
         single-threaded. There's some smart logic to not multithread if it seems less efficient.
     """
+    # Hack to restart the pool only if we need fewer threads.
     global pool
     if pool._processes != threads:
         pool.terminate()
         pool = Pool(threads)
+
+    # Run explicitly single-threaded for debugging purposes.
     if threads == 1:
         values = []
         for guess in possible_guesses:
@@ -291,83 +327,65 @@ def rank_guesses(possible_guesses, possible_words, wi=None, threads=4):
 
     else:
         func = partial(get_guess_value, possible_words=possible_words, wi=wi)
-        values = pool.map(func, possible_guesses, chunksize=len(possible_guesses)//12)
-        # with Pool(threads) as pool:
-        #     values = pool.map(func, possible_guesses)
+        values = pool.map(func, possible_guesses, chunksize=len(possible_guesses) // 12)
 
     guess_value = list(zip(values, possible_guesses))
     return sorted(guess_value)
 
 
+def process_first_guess(word_list, file_name, block_size=64):
+    """
+    Processes the first guess.
+
+    The first guess is computationally intensive and can take hours to process.
+    This function processes groups of guesses so that it can be stopped and
+    restarted easily.
+
+    :param word_list: The list of words to use.
+    :param file_name: The ending file name.
+    :param block_size: The number of guesses to process at a time.
+    """
+    word_list = tuple(word_list)
+    # Create the pickle file if it doesn't exist.
+    pickle_path = Path(file_name).with_suffix('.pickle')
+    if not pickle_path.exists():
+        with pickle_path.open("wb")as f:
+            pickle.dump([], f)
+
+    while True:
+        with pickle_path.open("rb") as f:
+            current_guess_values = pickle.load(f)
+
+        # Determine the next guesses.
+        current_guesses = [x[1] for x in current_guess_values]
+        remaining_guesses = [x for x in word_list if x not in current_guesses]
+        if len(remaining_guesses) == 0:
+            break
+        next_guesses = tuple(remaining_guesses[:block_size])
+        print(f"Checking {next_guesses}")
+
+        # Process the next guesses.
+        t = time.time()
+        guess_values = rank_guesses(next_guesses, word_list, threads=4)
+        for guess in guess_values:
+            print(guess)
+        print(f"This block took {time.time() - t} seconds")
+
+        # Add to the current list and dump back to a pickle
+        current_guess_values.extend(guess_values)
+        with pickle_path.open("wb") as f:
+            pickle.dump(current_guess_values, f)
+
+    # Dump the whole list to a CSV
+    with pickle_path.open("rb") as f:
+        all_guesses = pickle.load(f)
+
+    csv_path = Path(file_name).with_suffix('.csv')
+    with csv_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Score", "Word"])
+        writer.writerows(sorted(all_guesses))
+
 if __name__ == "__main__":
-    # Slowly iterate over all the words. I do this in pieces so I can save progress
-    # in case I need to stop and restart the code.
-    block_size = 64
-    while True:
-        with open("opening_guesses.pickle", "rb") as f:
-            current_guess_values = pickle.load(f)
-        current_guesses = [x[1] for x in current_guess_values]
-        remaining_guesses = [x for x in possible_words if x not in current_guesses]
-        if len(remaining_guesses) == 0:
-            break
-        next_guesses = remaining_guesses[:block_size]
-        print(f"Checking {next_guesses}")
-
-        t = time.time()
-        guess_values = rank_guesses(next_guesses, possible_words, threads=4)
-        for guess in guess_values:
-            print(guess)
-        print(f"This block took {time.time() - t} seconds")
-
-        # Add to the current list and dump back to a pickle
-        current_guess_values.extend(guess_values)
-        with open("opening_guesses.pickle", "wb") as f:
-            pickle.dump(current_guess_values, f)
-
-    #%% Dump the whole list to a CSV
-    with open("opening_guesses.pickle", "rb") as f:
-        all_guesses = pickle.load(f)
-
-    with open("opening_guesses.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Score", "Word"])
-        writer.writerows(sorted(all_guesses))
-
-    # %% Repeat the code for the Wordle list.
-
-    # Yes, this code duplication, but it's easier than trying to parameterize
-    # everything. I'll parameterize it if I need to do it again.
-
-    #%%
-    # Slowly iterate over all the words. I do this in pieces so I can save progress
-    # in case I need to stop and restart the code.
-    block_size = 32
-    while True:
-        with open("wordle_opening_guesses.pickle", "rb") as f:
-            current_guess_values = pickle.load(f)
-        current_guesses = [x[1] for x in current_guess_values]
-        remaining_guesses = [x for x in wordle_words if x not in current_guesses]
-        if len(remaining_guesses) == 0:
-            break
-        next_guesses = remaining_guesses[:block_size]
-        print(f"Checking {next_guesses}")
-
-        t = time.time()
-        guess_values = rank_guesses(next_guesses, wordle_words, threads=4)
-        for guess in guess_values:
-            print(guess)
-        print(f"This block took {time.time() - t} seconds")
-
-        # Add to the current list and dump back to a pickle
-        current_guess_values.extend(guess_values)
-        with open("wordle_opening_guesses.pickle", "wb") as f:
-            pickle.dump(current_guess_values, f)
-
-    #%% Dump the whole list to a CSV
-    with open("wordle_opening_guesses.pickle", "rb") as f:
-        all_guesses = pickle.load(f)
-
-    with open("wordle_opening_guesses.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Score", "Word"])
-        writer.writerows(sorted(all_guesses))
+    process_first_guess(possible_words, "12Dict_guesses", 64)
+    process_first_guess(wordle_words, "wordle_opening_guesses", 32)
