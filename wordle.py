@@ -2,10 +2,8 @@
 An optimal Wordle strategy based on information theory.
 """
 #%%
-import copy
 import csv
 import pickle
-import re
 import time
 from collections import Counter
 from functools import partial, lru_cache
@@ -372,9 +370,11 @@ def process_first_guess(
 
 
 if __name__ == "__main__":
+    # Despite having 4 logical cores, the code runs consistently faster with 2
+    # threads. I don't know why.
     process_first_guess(
-        "12Dict_guesses", twelve_dict_words, twelve_dict_weights, block_size=64
+        "12Dict_guesses", twelve_dict_words, twelve_dict_weights, block_size=8192, num_threads=2,
     )
     process_first_guess(
-        "wordle_opening_guesses", wordle_guesses, wordle_weights, block_size=32
+        "wordle_opening_guesses", wordle_guesses, wordle_weights, block_size=2048, num_threads=2
     )
