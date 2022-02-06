@@ -25,38 +25,120 @@ class WordleInformation:
     """
     A class to store the information given from previous guesses.
 
-    * Green tiles will set the possible letter list to the single letter.
-    * Yellow tiles will remove the letter from that position and add it as
-    required letter.
-    * Gray tiles will remove the possible letter from all lists
+    The information is stored in three parts:
+
+    * ``possible_letters``: The possible letters for each index. A tuple of
+      frozensets.
+    * ``minimum_letters``: The minimum number of letters required in a word.
+      These are determined from green and yellow tiles.
+    * ``maximum_letters``: The maximum number of letters required in a word.
+      These are determined from the gray tiles.
     """
 
-    def __init__(self, possible_letters=None, required_letters=None):
+    def __init__(self, previous_wi=None, guess=None, output=None):
         """
-        :param possible_letters: A list of 5 sets storing the possible letters
-            for each letter position.
-        :param required_letters: A dictionary where the key is a letter and the
-            value is the number of times that letter must appear.
+        :param previous_wi: The previous :class:`WordleInformation` object. The
+            guess and output will be added to this information. If None, start
+            fresh.
+        :param guess: The most recent guess. If None, no guess is added.
+        :param output: The most recent output as a string of "-+=". If None, no
+            output is added.
         """
-        # The possible letters for each position.
-        if possible_letters is None:
-            self.possible_letters = [
+        # Create the fields
+        if previous_wi is None:
+            possible_letters = [
                 set("abcdefghijklmnopqrstuvwxyz"),
                 set("abcdefghijklmnopqrstuvwxyz"),
                 set("abcdefghijklmnopqrstuvwxyz"),
                 set("abcdefghijklmnopqrstuvwxyz"),
                 set("abcdefghijklmnopqrstuvwxyz"),
             ]
+            minimum_letters = {}
+            maximum_letters = {}
         else:
-            self.possible_letters = possible_letters
+            possible_letters = [set(x) for x in previous_wi.possible_letters]
+            minimum_letters = previous_wi.minimum_letters.copy()
+            maximum_letters = previous_wi.maximum_letters.copy()
 
-        # A required letter must be in the word, but has an unknown position
-        # (yellow tile). The key is the letter and the value is the number of
-        # times that letter must appear.
-        if required_letters is None:
-            self.required_letters = {}
-        else:
-            self.required_letters = required_letters
+        # Incorporate the new guess if necessary.
+        if guess is not None and output is not None:
+            new_min = {}
+            new_max = {}
+
+            # Process green and yellow first.
+            for idx, (letter, symbol) in enumerate(zip(guess, output)):
+                # Green
+                if symbol == "=":
+                    possible_letters[idx] = set(letter)
+                    if letter not in new_min:
+                        new_min[letter] = 0
+                    new_min[letter] += 1
+
+                if symbol == "+":
+                    try:
+                        possible_letters[idx].remove(letter)
+                    except KeyError:
+                        pass
+                    if letter not in new_min:
+                        new_min[letter] = 0
+                    new_min[letter] += 1
+
+            # Process gray last because it required new_min to be populated. A
+            # gray symbol comes out when no more letters are in the output.
+            for idx, (letter, symbol) in enumerate(zip(guess, output)):
+                if symbol == "-":
+                    if letter not in new_max:
+                        new_max[letter] = 0
+                    new_max[letter] = new_min.get(letter, 0)
+
+                    # If the letter isn't in the word, remove it from the
+                    # required lists. These check faster than this max check.
+                    if new_max[letter] == 0:
+                        for idx in range(5):
+                            try:
+                                possible_letters[idx].remove(letter)
+                            except KeyError:
+                                pass
+
+            for letter, val in new_min.items():
+                minimum_letters[letter] = max(val, minimum_letters.get(letter, 0))
+            maximum_letters.update(new_max)
+
+        # The minimum number of letters must be at least as big as the number of
+        # greens, even from previous guesses.
+        for idx in range(5):
+            if len(possible_letters[idx]) > 1:
+                continue
+            to_match = possible_letters[idx]
+            letter = list(to_match)[0]
+            num_matches = sum(x == to_match for x in possible_letters)
+            minimum_letters[letter] = max(num_matches, minimum_letters[letter])
+
+        # Finalize the object
+        self.possible_letters = tuple(frozenset(x) for x in possible_letters)
+        self.minimum_letters = minimum_letters
+        self.maximum_letters = maximum_letters
+
+    def is_valid_word(self, word):
+        """
+        Returns True if the word matches this object.
+        """
+        # Check letters
+        for idx in range(5):
+            if word[idx] not in self.possible_letters[idx]:
+                return False
+
+        # Check maximums
+        for letter, max_count in self.maximum_letters.items():
+            if word.count(letter) > max_count:
+                return False
+
+        # Check minimums
+        for letter, min_count in self.minimum_letters.items():
+            if word.count(letter) < min_count:
+                return False
+
+        return True
 
     def _members(self):
         """
@@ -65,8 +147,9 @@ class WordleInformation:
         https://stackoverflow.com/a/45170549
         """
         pl = tuple((frozenset(x) for x in self.possible_letters))
-        rl = tuple(sorted(self.required_letters))
-        return (pl, rl)
+        minl = tuple(sorted(self.minimum_letters))
+        maxl = tuple(sorted(self.maximum_letters))
+        return (pl, minl, maxl)
 
     def __hash__(self):
         return hash(self._members())
@@ -74,118 +157,78 @@ class WordleInformation:
     def __eq__(self, other):
         return self._members() == other._members()
 
-    def is_valid_word(self, word):
-        """
-        Returns True if the word meets the information.
-        """
-        # Check letters
-        for idx in range(5):
-            if word[idx] not in self.possible_letters[idx]:
-                return False
 
-        for letter, req_count in self.required_letters.items():
-            if word.count(letter) < req_count:
-                return False
+def make_guess(guess, answer):
+    """
+    Makes a guess and returns the output string.
 
-        return True
+    * "=" means green tile
+    * "+" means yellow tile
+    * "-" means gray tile.
 
-    def add_green_match(self, idx, letter):
-        """
-        Updates the information for a green match.
+    :param guess: The guessed word.
+    :param answer: The answer.
 
-        The possible letters for that index are updated and an additional
-        required letter is added.
-        """
-        self.possible_letters[idx] = set(letter)
-        if letter not in self.required_letters:
-            self.required_letters[letter] = 0
-        # TODO Handle multiple letter?
-        self.required_letters[letter] = 1
+    :returns: The five-character results string.
+    """
+    true_counts = Counter(answer)
+    results = list("-----")
+    # Handle green tiles first to remove those from the true counts.
+    for idx, gl in enumerate(guess):
+        if gl == answer[idx]:
+            results[idx] = "="
+            true_counts.subtract(gl)
 
-    def add_yellow_match(self, idx, letter):
-        """
-        Updates the information for a yellow match.
+    # Yellow tiles
+    for idx, gl in enumerate(guess):
+        # Skip green tiles.
+        if results[idx] == "=":
+            continue
+        # Additional tiles are left
+        if true_counts[gl] > 0:
+            results[idx] = "+"
+            true_counts.subtract(gl)
 
-        The letter is known not to be in that position, but is somewhere else.
-        """
-        try:
-            self.possible_letters[idx].remove(letter)
-        except KeyError:
-            pass
-        if letter not in self.required_letters:
-            self.required_letters[letter] = 0
-        # TODO Handle multiple letters?
-        self.required_letters[letter] = 1
+    # Gray tiles implicitly handled at creation.
 
-    def add_gray_match(self, idx, letter):
-        """
-        Updates the information for a gray tile.
-        """
-        for idx in range(5):
-            try:
-                self.possible_letters[idx].remove(letter)
-            except KeyError:
-                pass
-
-    def make_guess(self, guess, true_word):
-        """
-        Makes a guess and returns a new information object.
-
-        The new information object contains all the information stored in this
-        object and the new information from the guess.
-
-        :param guess: The guessed word.
-        :param true_word: The true word.
-
-        :returns: A new WordleInformation object, squarestr. The square string
-            uses = as green, + as yellow and - as gray.
-        """
-        wi = copy.deepcopy(self)
-        true_counts = Counter(true_word)
-
-        results = list("-----")
-        # Handle gren tiles first to remove those from the true counts.
-        for idx, gl in enumerate(guess):
-            # Green tile
-            if gl == true_word[idx]:
-                results[idx] = "="
-                wi.add_green_match(idx, gl)
-                true_counts.subtract(gl)
-
-        # Yellow tiles
-        for idx, gl in enumerate(guess):
-            # Skip green tiles
-            if results[idx] == "=":
-                continue
-            # Additional tiles are left
-            if true_counts[gl] > 0:
-                results[idx] = "+"
-                wi.add_yellow_match(idx, gl)
-                true_counts.subtract(gl)
-
-        # Gray tiles: TODO fix this for double letters. Right now, it only works
-        # if the letter is never used.
-        for idx, gl in enumerate(guess):
-            if gl not in true_word:
-                wi.add_gray_match(idx, gl)
-
-        return wi, "".join(results)
-
+    return "".join(results)
 
 
 @lru_cache(maxsize=1024)
-def _get_remaining_words(wi, possible_words):
+def _get_remaining_words(wi, guess, out, possible_words_str):
     """
     Returns the number of remaining words.
 
     This is separated so that it is cachable.
 
-    :param wi: The WordleInformation object.
-    :param possible_words: The words to filter.
+    ``possible_words_str`` is a single string with no spaces because Python
+    caches string hashes, but not tuple hashes
+    (https://bugs.python.org/issue1462796).
+
+    .. note::
+
+        :func:`~python.functools.lru_cache` hashes the inputs to store the
+        results in the cache. Because most of these function calls are hashed,
+        it is actually faster to pass in a string and split it into five-letter
+        words here than to pass in a tuple directly. It only works because all
+        the words are five letters long. It's a 2.5x speed increase, but that
+        doesn't mean it's not a horrible hack.
+
+    :param wi: The starting WordleInformation object.
+    :param guess: The guess.
+    :param out: The output.
+    :param possible_words: The words to filter as a single string with no
+        spaces.
 
     :returns: The number of words that match the object.
     """
-    return sum(wi.is_valid_word(w) for w in possible_words)
+    # https://stackoverflow.com/a/9475354
+    # This is about twice as fast as doing it by regex.
+    possible_words = (
+        possible_words_str[i : i + 5] for i in range(0, len(possible_words_str), 5)
+    )
+    new_wi = WordleInformation(wi, guess, out)
+    return sum(new_wi.is_valid_word(w) for w in possible_words)
 
 
 def get_guess_value(guess, possible_words, weights=None, wi=None):
@@ -207,13 +250,18 @@ def get_guess_value(guess, possible_words, weights=None, wi=None):
         weights = [1] * len(possible_words)
     remaining_word_counts = []
     possible_words = tuple(possible_words)  # Make immutable for caching.
+
+    # Horrible hack for performance boost. See :func:`_get_remaining_words` for
+    # more details.
+    possible_words_str = "".join(possible_words)
     for word in possible_words:
-        new_wi, out = wi.make_guess(guess, word)
-        # The word was guessed, so there's no remaining words.
+        out = make_guess(guess, word)
         if out == "=====":
             remaining_word_counts.append(0)
         else:
-            remaining_word_counts.append(_get_remaining_words(new_wi, possible_words))
+            remaining_word_counts.append(
+                _get_remaining_words(wi, guess, out, possible_words_str)
+            )
 
     # Compute the weighted average.
     weighted_average = 0
@@ -221,7 +269,6 @@ def get_guess_value(guess, possible_words, weights=None, wi=None):
         weighted_average += count * weight
     weighted_average /= sum(weights)
     return weighted_average
-
 
 
 #%%
@@ -264,7 +311,9 @@ def rank_guesses(possible_guesses, possible_answers, weights=None, wi=None, thre
     return sorted(guess_value)
 
 
-def process_first_guess(file_name, word_list, weights=None, block_size=64, num_threads=4):
+def process_first_guess(
+    file_name, word_list, weights=None, block_size=64, num_threads=4
+):
     """
     Processes the first guess.
 
@@ -299,7 +348,9 @@ def process_first_guess(file_name, word_list, weights=None, block_size=64, num_t
 
         # Process the next guesses.
         t = time.time()
-        guess_values = rank_guesses(next_guesses, word_list, weights, threads=num_threads)
+        guess_values = rank_guesses(
+            next_guesses, word_list, weights, threads=num_threads
+        )
         for guess in guess_values:
             print(guess)
         print(f"This block took {time.time() - t} seconds")
@@ -321,9 +372,6 @@ def process_first_guess(file_name, word_list, weights=None, block_size=64, num_t
 
 
 if __name__ == "__main__":
-    process_first_guess(
-    "wordle_opening_guesses", wordle_guesses, wordle_weights, block_size=32, num_threads=4
-)
     process_first_guess(
         "12Dict_guesses", twelve_dict_words, twelve_dict_weights, block_size=64
     )
