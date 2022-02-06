@@ -8,8 +8,8 @@ simulation/information theory perspective. This strategy identifies the guess
 that on average leaves the fewest possible words remaining. It is likely near
 optimal in Normal mode, but loses to some edge cases in Hard mode.
 
-Using historical Wordles #1-#225, it has achieved a 100% win percentage in
-Normal mode and a 94.2% win percentage in Hard mode.
+Using historical Wordles #1-#230, it has achieved a 100% win percentage in
+Normal mode and a 98.7% win percentage in Hard mode.
 
 The best starting words using the Wordle dictionary are given below. See the
 full rankings in ``wordle_opening_guesses.csv``.
@@ -50,22 +50,18 @@ guesses and then choose the guess with the best outcome. The flow is as follows
 4. Repeat steps 1-3 for all possible guesses.
 5. The best guess is the one with the lowest score.
 
-The simulation logic is all in the :class:`WordleInformation` class. It can
-determine if words match the existing information
-(:meth:`WordleInformation.is_valid_word`), and create an updated object with the
-latest information from another guess (meth:`WordleInformation.make_guess).
-
-The value of any particular guess is implemented in :func:`get_guess_value`. All
-the guesses are combined in :func:`rank_guesses`. However, it is very slow, so
-not all guesses should be ranked at once.
+The Wordle output is computed using :func:`make_guess`, which can be stored in a
+:class:`WordleInformation` object. These objects store the current game state
+and can determine which words match the current information with
+:meth:`is_valid_word`. The value of any particular guess is implemented in
+:func:`get_guess_value`. All the guesses are combined in :func:`rank_guesses`.
 
 ## Word List Choices
 
 The main free parameter is to choose which word list to use. If the word list is
 too short, it may not contain the answer to some puzzles and the algorithm will
 fail. If the list is too long, the algorithm may get bogged down eliminating
-guesses that cannot be true. Long lists also require much more processing time
-(See Performance Issues).
+guesses that cannot be true.
 
 I first combined the ``2of12inf.txt`` and ``3of6all.txt`` lists from the
 [12Dicts](http://wordlist.aspell.net/12dicts/), which provided 5,486 five-letter
@@ -85,38 +81,38 @@ randomly from the Wordle list, only 42% of past solutions should be on the
 
 ### Answer Weighting + Frequency Analysis
 
-* Presents a way to weight potential answers from a large list of words
-* Basically, I want the dumb guesses from the Wordle list lowly weighted so
-  better guesses usually prevail
+12Dicts also provides the ``2+2+3frq.txt`` list, which organizes lemmas (word
+bases) based on frequency of use. There are 21 levels, with level 1 containing
+the most common words and each subsequent level containing words used
+approximately half as frequently. I defined a 22nd level for words not found in
+this frequency list. Then, ``2+2+3lem.txt`` can be used to map all the lemmas to
+words.
 
-* Weighting words that are more likely solutions
+With these lists, possible words and historical answers can be grouped by their
+frequency level. Intuitively, frequency levels with lots of historical answers
+should be prioritized over other levels.
 
-* I don't think the Wordle answers are randomly drawn.
-* If the answers are sampled randomly 
+This is achieved by assigning each frequency level a weight calculated as the (#
+of answers at the frequency level) / (# of possible words the frequency level).
+If level 15 has a higher weighting than level 17, it implies that words at level
+15 are more likely to be correct. Any levels without a historical Wordle answer
+are assigned the average weight of levels 1-21.
 
-12Dicts provides the ``2+2+3frq.txt`` list, which organizes lemmas (word bases)
-based on frequency of use. There are 21 levels, with level 1 containing the most
-common words and each subsequent level containing words used approximately half
-as frequently. This can be combined with ``2+2+3lem.txt`` to map the lemmas to
-possible words. I define a 22nd level, which is for words not found in the
-frequency list.
+The averaging step in :func:`get_guess_value` was updated to use a weighted
+average according to these weights. This indirectly influences which word to
+guess by playing with the weighting function present. It still allows any word
+to be guessed (in Normal mode), but will prefer common words near the end.
 
-The theory is that 
+In practice, levels 1-21 have fairly similar weights, with lower a slight
+preference for lower levels. 63% of the possible Wordle guesses are not present
+in the frequency list and assigned level 22. With only 1.4% of historical
+guesses at that level, it's heavily penalized.
 
-* Overall goal: Figure out which guesses are likely useless and discard them
-* Show histogram results? Basically, there are very few answers that aren't on
-  the frequency list, but there are a lot of Wordle guesses.
-
-* Theory: Wordle answers are more likely to be common words than uncommon words
-* My approach: Take a list of possible guesses and answers. For each frequency
-  level, determine the fraction of answers / guesses. That becomes the weight at
-  this level. This will encourage better guesses
-  * Some of the higher frequencies only have a few words. If the weight is 0, I assign the weight to the average of all non-22 levels.
-* Weights are applied only in :func:`get_guess_value`. The results are averaged
-  over the answer's weight. Basically, we want more likely answers to weight
-  more heavily.
-* This will indirectly feed into more common guesses.
-* Is it okay to use the previous Wordle words to this
+Weighting answers only had minor changes to the first-guess lists. The top
+guesses remained the same and the overall ranking was similar, with occasional
+words swapping places. The main benefit comes in later guesses when the word
+list is significantly smaller. In this case, common words are more likely to be
+guessed because they are weighted more heavily.
 
 ## Normal Vs Hard Mode
 
@@ -143,7 +139,7 @@ would be up to chance.
 
 # Algorithm Performance
 
-The algorithm was tested against Wordle answers #1-#225, available
+The algorithm was tested against Wordle answers #1-#230, available
 [here](https://www.reviewgeek.com/todays-wordle-answer/). It played in Normal
 mode and Hard mode for the following two word lists
 
@@ -151,7 +147,6 @@ mode and Hard mode for the following two word lists
   starting guess was "tares".
 * Wordle List: the 12,972 allowable guesses in Wordle. The starting guess was
   "lares".
-
 
 ## Normal Mode
 
@@ -162,11 +157,11 @@ average to win.
 
 |  Winning Guess #  | 12Dict List Percentage | Wordle List Percentage |
 | :---------------: | :--------------------: | :--------------------: |
-|         2         |          0.9%          |          0.0%          |
-|         3         |         33.3%          |         18.2%          |
-|         4         |         57.8%          |         58.7%          |
-|         5         |          6.7%          |         21.8%          |
-|         6         |          0.4%          |          1.3%          |
+|         2         |          1.7%          |          0.9%          |
+|         3         |         38.7%          |         36.5%          |
+|         4         |         54.8%          |         56.1%          |
+|         5         |          3.5%          |          6.5%          |
+|         6         |          0.4%          |          0.0%          |
 |       Lost        |          0.0%          |          0.0%          |
 | Missing from List |          0.9%          |          0.0%          |
 
@@ -177,17 +172,17 @@ are usually from words that share many possible letters. The 12Dict list lost to
 "pound", "lusty", "hatch", "jaunt", "gaudy" and "chill", in addition to the two
 missing words "masse" and "golem".
 
-Interestingly, the 12Dict list had a higher percentage of early wins in Hard
-mode. I think it is because all guesses in Hard mode can be the true word.
+Interestingly, both lists have a higher percentage of early wins in Hard mode. I
+think it is because all guesses in Hard mode can be the true word.
 
 |  Winning Guess #  | 12Dict List Percentage | Wordle List Percentage |
 | :---------------: | :--------------------: | :--------------------: |
-|         2         |          2.2%          |          0.4%          |
-|         3         |         36.0%          |         17.3%          |
-|         4         |         42.7%          |         43.6%          |
-|         5         |         10.7%          |         22.7%          |
-|         6         |          4.4%          |         10.2%          |
-|       Lost        |          2.7%          |          5.8%          |
+|         2         |          2.6%          |          2.2%          |
+|         3         |         39.6%          |         34.3%          |
+|         4         |         46.5%          |         48.7%          |
+|         5         |          8.3%          |         12.2%          |
+|         6         |          0.9%          |          1.3%          |
+|       Lost        |          1.3%          |          1.3%          |
 | Missing from List |          0.9%          |          0.0%          |
 
 # Information Theory Connection
@@ -199,10 +194,10 @@ The theory behind this approach is to choose guesses that minimize the overall
 entropy of the system. The true word is modeled as a discrete random variable
 with each value representing one of the possible words. I assume all words are
 equally probable, which simplifies the math some and allows me to get away with
-counting distinct elements rather than deal with probabiltiies.
+counting distinct elements rather than deal with probabilities.
 
 The information provided by a guess is discrete: once the information is added,
-the probability of some values will drop to 0 and the other probabilties will
+the probability of some values will drop to 0 and the other probabilities will
 scale accordingly. This means the way to minimize entropy is to remove the most
 possible words with a single guess. This also means we are picking the guess
 that will provide the most information about the unknown word.
@@ -239,100 +234,40 @@ mode.
 
 For example, consider the following group of nine words: ['bound', 'found',
 'hound', 'lound', 'mound', 'pound', 'round', 'sound', 'wound']. In Normal mode,
-guesses like "barfs" or "balms" can eliminate multiple options at once, clearin
-g through the list in a few guesses. In Hard mode, each word must be eliminated
+guesses like "barfs" or "balms" can eliminate multiple options at once, clearing
+through the list in a few guesses. In Hard mode, each word must be eliminated
 individually, taking up to nine guesses in the worst case.
 
-# Potential Improvements
+# Optimizations
 
-## Performance Issues
+This section highlights some of the changes I made to get significant
+performance gains. They might be able to help you too!
 
-Determining the optimal first guess is very slow. Luckily, it only needs to be
-done once! It currently takes my computer about 3.5 seconds per guess, which is
-about 5 hours to iterate through all the possible guesses.
-
-The main problem is that the algorithm is O(N^3), with N being the number of
+Naive implementations of this algorithm are O(N^3), with N being the number of
 words to check. Each simulation takes O(N) to filter the list of words. N
 simulations are created (one for each truth word) for each guess. N guesses are
-made.
+made in total. 
 
-This means subsequent guesses should be much faster (on the order of seconds)
-because the list of possible words will shrink so significantly after the first
-guess. If the same first guess is reused, then the first guess outputs can be
-cached for all the possible information outputs.
+The first easy step was switching to [PyPy](https://www.pypy.org/) and setting
+up the code for
+[``multiprocessing``](https://docs.python.org/3/library/multiprocessing.html).
 
-The slow step is :meth:`WordleInformation.is_valid_word`, which has been
-optimized as much as I can for pure Python. The main optimizations that helped
-are listed below. 
+The next step was to cache useful results. This required making
+:class:`WordleInformation` hashable, but saved redoing a lot of computations.
+The first big savings was in :func:`get_guess_value`. For a given guess, there's
+only a maximum of 243 possible outputs, even though I may be checking thousands
+of words. By caching the remaining words of each output, I effectively eliminate
+one of the for loops, dropping the algorithm to O(N^2).
 
-* Use Python sets for the list of possible characters rather than strings.
-  Python sets have O(1) search time, while lists will have O(M)
-* Switch to [PyPy](https://www.pypy.org/). This sped up my code 4x-6x just by
-  changing the command!
-* Use
-  [``multiprocessing``](https://docs.python.org/3/library/multiprocessing.html).
-  Parallelizing things never hurts.
-* Made :class:`WordleInformation` objects hashable so I can use
-  :func:`python.functools.lru_cache` to cache results from
-  :func:`get_guess_value` and :func:`rank_guesses`.
-* Use :func:`python.functools.lru_cache` to cache :func:`get_guess_value` and
-  :func:`rank_guesses`. This was a 10x-20x speed boost!
+The second big savings was to cache :func:`rank_guesses`, which pays off when
+running :func:`play_game`. In a similar manner, there are only a maximum of 243
+possible second guesses (and in practice, many fewer), so caching this saves
+repeating those calculations.
 
-I considered a few other optimization ideas, but they were either too
-complicated or not faster. I may revisit these ideas in the future if
-performance is too big of a concern.
+Then, there were a few other hacks to speed things up. Read the code if you want
+to see them; they aren't good coding practices, but they sure were fast!
 
-* Regular expressions: I found a custom ``is_valid_word`` was faster than
-  implementing regex searches. I think it's because my custom expression can
-  short-circuit once a word is known to not match the rules.
-* Invert my search terms: Rather than maintain a list of possible letters,
-  maintain a list of invalid letters. It was slower, but I'm not sure why.
-* [Numba](https://numba.pydata.org/): It was slower than regular Python. Their
-  documentation says it can be [slow for string
-  operations].(https://numba.pydata.org/numba-doc/dev/reference/pysupported.html#str)
-* [Cython](https://cython.org/): This was confusing and I wasn't sure how to get
-  sets to work.
-* NumPy Vectorization: This is promising, but I haven't spent enough time to
-  figure out how to do it. Because all the words are 5 letters, the words can be
-  stored as a NumPy array. If I can vectorize ``is_valid_word``, there could be
-  some major performance gains. I think this may be easiest if combined with
-  inverting the search terms. NumPy also doesn't work with PyPy, so it would
-  have to be one or the other.
-* Write in a fast language: This is likely the best option, but it's been a
-  while since I've used C++. Maybe it's a chance to learn Go.
-
-## Duplicated letter information.
-
-The :class:`WordleInformation` objects don't propperly apply yellow and gray
-tiles when the tiles have duplicated letters. I don't know how Wordle handles
-it, so I'll have to wait for those days. See the example below.
-
-```
-Your guess: papal
-Solution:   apple
-Output:     ++=-+
-```
-
-The current objects will only check for the "p" in the middle, but not
-additionally require a second "p". I chose to discard this information because
-the logic of dealing wtih this kind of event between guesses is unclear.
-
-This issue leads to a loss in one of the Hard mode Wordles, where the same word
-was guessed twice. The word "chili" was guessed twice when the true answer was
-"chill".
-
-I've addressed this now.
-
-## Weighted Guesses
-
-Right now, I assume all words are equally likely solutions to the Wordle, but it
-might be beneficial to weight common words more highly. This would allow for a
-larger potential word set while still emphasizing that known words are more
-likely.
-
-12Dicts has a frequency based list: ``2+2+3freq.txt`` that could be used here.
-However, I'm not sure what the weightings should be. Dealing with non-uniform
-weights would also require codebase updates.
+# Potential Improvements
 
 ## Minimax Guess Value
 
@@ -341,7 +276,9 @@ information theory section for a discussion of this). Another possible option is
 to minimize the maximum bin size. This would penalize large bin sizes more.
 
 I'm not sure how much this will improve results because mean squared bin size
-already heavily penalizes larger bins, but it may be interesting later.
+already heavily penalizes larger bins, but it may be interesting later. It might
+already be moot now that weighted averaging is used. I also think the improved
+hard mode guesses will work better.
 
 ## Improve Hard Mode Guesses
 
