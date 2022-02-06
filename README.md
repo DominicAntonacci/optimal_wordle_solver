@@ -76,10 +76,47 @@ The official [Wordle list](https://github.com/tabatkins/wordle-list/) contains
 12,972 words and determines which guesses are permitted. However, some of the
 words seem made up, ike "lotsa", "moobs", and "urbex". I suspect the Wordle
 solutions draw from a smaller list because players need to be able to guess the
-solutions! This aligns with the algorithm results. If words were randomly chosen
-from the official list, then only around 42% of past solutions should have been
-in the 12Dict list. However, 99.1% of past solutions are in the list (as of
-2022/01/31).
+solutions! 
+
+A cursory analysis of Wordle answers #1-225 confirms this suspicion; 99.1% of
+past solutions are present in the 12Dicts list. If the answers were drawn
+randomly from the Wordle list, only 42% of past solutions should be on the
+12Dicts list.
+
+### Answer Weighting + Frequency Analysis
+
+* Presents a way to weight potential answers from a large list of words
+* Basically, I want the dumb guesses from the Wordle list lowly weighted so
+  better guesses usually prevail
+
+* Weighting words that are more likely solutions
+
+* I don't think the Wordle answers are randomly drawn.
+* If the answers are sampled randomly 
+
+12Dicts provides the ``2+2+3frq.txt`` list, which organizes lemmas (word bases)
+based on frequency of use. There are 21 levels, with level 1 containing the most
+common words and each subsequent level containing words used approximately half
+as frequently. This can be combined with ``2+2+3lem.txt`` to map the lemmas to
+possible words. I define a 22nd level, which is for words not found in the
+frequency list.
+
+The theory is that 
+
+* Overall goal: Figure out which guesses are likely useless and discard them
+* Show histogram results? Basically, there are very few answers that aren't on
+  the frequency list, but there are a lot of Wordle guesses.
+
+* Theory: Wordle answers are more likely to be common words than uncommon words
+* My approach: Take a list of possible guesses and answers. For each frequency
+  level, determine the fraction of answers / guesses. That becomes the weight at
+  this level. This will encourage better guesses
+  * Some of the higher frequencies only have a few words. If the weight is 0, I assign the weight to the average of all non-22 levels.
+* Weights are applied only in :func:`get_guess_value`. The results are averaged
+  over the answer's weight. Basically, we want more likely answers to weight
+  more heavily.
+* This will indirectly feed into more common guesses.
+* Is it okay to use the previous Wordle words to this
 
 ## Normal Vs Hard Mode
 
@@ -283,6 +320,8 @@ the logic of dealing wtih this kind of event between guesses is unclear.
 This issue leads to a loss in one of the Hard mode Wordles, where the same word
 was guessed twice. The word "chili" was guessed twice when the true answer was
 "chill".
+
+I've addressed this now.
 
 ## Weighted Guesses
 
