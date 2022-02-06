@@ -269,14 +269,12 @@ def get_guess_value(guess, possible_words, weights=None, wi=None):
     return weighted_average
 
 
-#%%
-
 # Hacky thing with pool so it doesn't get recreated every time this is called.
-pool = Pool(4)
+pool = Pool(2)
 
 
 @lru_cache(maxsize=2048)
-def rank_guesses(possible_guesses, possible_answers, weights=None, wi=None, threads=4):
+def rank_guesses(possible_guesses, possible_answers, weights=None, wi=None, threads=2):
     """
     Ranks guesses based on their value.
 
@@ -287,6 +285,8 @@ def rank_guesses(possible_guesses, possible_answers, weights=None, wi=None, thre
     :param threads: The number of CPU threads to use. If set to 1, this runs
         single-threaded for debugging purposes.
     """
+    if weights is not None and len(possible_answers) != len(weights):
+        raise ValueError('Must have equal number of answers and weights!')
     # Hack to restart the pool only if we need fewer threads.
     global pool
     if pool._processes != threads:
@@ -303,7 +303,7 @@ def rank_guesses(possible_guesses, possible_answers, weights=None, wi=None, thre
         func = partial(
             get_guess_value, possible_words=possible_answers, weights=weights, wi=wi
         )
-        values = pool.map(func, possible_guesses, chunksize=len(possible_guesses) // 12)
+        values = pool.map(func, possible_guesses, chunksize=len(possible_guesses) // 12 + 1)
 
     guess_value = list(zip(values, possible_guesses))
     return sorted(guess_value)
